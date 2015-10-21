@@ -6,7 +6,6 @@
 #include <curand_kernel.h>
 
 #define Threads 768
-//#define Threads 5 //Threads per block in 1D
 
 __global__ void init (unsigned int, curandState_t*);
 __global__ void randoms (curandState_t*, int*, int*, int*, int*);
