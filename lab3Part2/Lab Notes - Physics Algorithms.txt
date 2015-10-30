@@ -1,0 +1,19 @@
+F(i,x) = Gm1mx  /  r^2
+F = (MU) * drand48();
+
+Add up all gravity forces
+F(i,x) += Gm1mx  /  r^2
+F(friction) += (mU) * drand48();
+
+F+= F(i,x) + F(friction)
+
+
+dont do square root. just do
+r^2 > d^2 instead of trying to get d (after square root)
+or instead can just even do:
+if (| cellId(i) - cellId(j)| < 2)
+	//do good stuff
+
+V = F (delta)T / m
+
+cudaSetDevice(1)
