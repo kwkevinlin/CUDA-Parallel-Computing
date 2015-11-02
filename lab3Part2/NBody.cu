@@ -63,22 +63,23 @@ int main (int argc, char *argv[]) {
 		tmax = timesteps
 	*/
 
+	//float body[N * 7];
+    float *body = (float *)malloc(N * 7 * sizeof(float));
+
 	/*
 	float **body = (float **)malloc(N * sizeof(float *));
     for (int i = 0; i < N; i++)
          body[i] = (float *)malloc(7 * sizeof(float));
+
+    //float *body = (float *)malloc(10000 * 7 * sizeof(float));
+
+    float body[N*7];
+    body[i*N+X_POS];
+    cudaMalloc((void**) &dev_body, N * 7 * sizeof(float));
+
 	*/
 
-	float *body[N];
-	for (int i = 0; i < N;  i++)
-		body[i] = (float *)malloc(7 * sizeof(float));
-	/*
-		error: expression must have pointer-to-object type
-		Not sending in all the heap data too from body[i] = (float*)malloc(7* * sizeof(float)) ?
-		Goal: Avoid pointer arithmetic and use [][], or should we not do that?
-	*/
-
-	float *Fx_dir = (float *)malloc(N * sizeof(float)); //Probably don't need to put these on heap
+    float *Fx_dir = (float *)malloc(N * sizeof(float)); //Probably don't need to put these on heap
 	float *Fy_dir = (float *)malloc(N * sizeof(float)); 
 	float *Fz_dir = (float *)malloc(N * sizeof(float)); 
 	float *dev_body, *dev_fx, *dev_fy, *dev_fz;
@@ -87,15 +88,15 @@ int main (int argc, char *argv[]) {
 
 	// Assign each body a random initial positions and velocities
 	for (int i = 0; i < N; i++) {
-		body[i][MASS] = 0.001;
+		body[i * N + MASS] = 0.001;
 
-		body[i][X_VEL] = drand48();
-		body[i][Y_VEL] = drand48();
-		body[i][Z_VEL] = drand48();
+		body[i * N + X_VEL] = drand48();
+		body[i * N + Y_VEL] = drand48();
+		body[i * N + Z_VEL] = drand48();
 
-		body[i][X_POS] = drand48();
-		body[i][Y_POS] = drand48();
-		body[i][Z_POS] = drand48();
+		body[i * N + X_POS] = drand48();
+		body[i * N + Y_POS] = drand48();
+		body[i * N + Z_POS] = drand48();
 	}	
 
 	// Print out initial positions in PDB format
@@ -103,9 +104,9 @@ int main (int argc, char *argv[]) {
 	fprintf(f, "MODEL %8d\n", 0);
 	for (int i = 0; i < N; i++) {
 		printf("%s%7d  %s %s %s%4d    %8.3f%8.3f%8.3f  %4.2f  %4.3f\n",
-				"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i][X_POS], body[i][Y_POS], body[i][Z_POS], 1.00, 0.00);
+				"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i * N + X_POS], body[i * N + Y_POS], body[i * N + Z_POS], 1.00, 0.00);
 		fprintf(f, "%s%7d  %s %s %s%4d    %8.3f%8.3f%8.3f  %4.2f  %4.3f\n",
-				"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i][X_POS], body[i][Y_POS], body[i][Z_POS], 1.00, 0.00);
+				"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i * N + X_POS], body[i * N + Y_POS], body[i * N + Z_POS], 1.00, 0.00);
 	}
 	printf("TER\nENDMDL\n");
 	fprintf(f, "TER\nENDMDL\n");
@@ -136,7 +137,6 @@ int main (int argc, char *argv[]) {
 		cudaMemcpy(dev_fy, &Fy_dir, N * sizeof(float), cudaMemcpyHostToDevice);
 		cudaMemcpy(dev_fz, &Fz_dir, N * sizeof(float), cudaMemcpyHostToDevice);
 		
-		//<<<(int)ceil(points/Threads) + 1, Threads>>>
 		nbody<<<(int)ceil(N/Threads) + 1, Threads>>>(dev_states, dev_body, dev_fx, dev_fy, dev_fz);
 		
 		cudaThreadSynchronize();
@@ -146,6 +146,7 @@ int main (int argc, char *argv[]) {
 		cudaMemcpy(Fy_dir, dev_fy, N * sizeof(float), cudaMemcpyDeviceToHost);
 		cudaMemcpy(Fz_dir, dev_fz, N * sizeof(float), cudaMemcpyDeviceToHost);
 
+		cudaFree(dev_states);
 		cudaFree(dev_body);
 		cudaFree(dev_fx);
 		cudaFree(dev_fy);
@@ -153,34 +154,35 @@ int main (int argc, char *argv[]) {
 
 //------------------------------------------------------------------------------------------
 
+		/* PARALLELIZE THIS TOO - Can be inside above, or new kernel */
 		// update postions and velocity in array
 		for (int i = 0; i < N; i++) {
 
 			// Update velocities
-			body[i][X_VEL] += Fx_dir[i] * dt / body[i][MASS];
-			body[i][Y_VEL] += Fy_dir[i] * dt / body[i][MASS];
-			body[i][Z_VEL] += Fz_dir[i] * dt / body[i][MASS];
+			body[i * N + X_VEL] += Fx_dir[i] * dt / body[i * N + MASS];
+			body[i * N + Y_VEL] += Fy_dir[i] * dt / body[i * N + MASS];
+			body[i * N + Z_VEL] += Fz_dir[i] * dt / body[i * N + MASS];
 
 			// periodic boundary conditions
-			if (body[i][X_VEL] <  -BOXL * 0.5) body[i][X_VEL] += BOXL;
-			if (body[i][X_VEL] >=  BOXL * 0.5) body[i][X_VEL] -= BOXL;
-			if (body[i][Y_VEL] <  -BOXL * 0.5) body[i][Y_VEL] += BOXL;
-			if (body[i][Y_VEL] >=  BOXL * 0.5) body[i][Y_VEL] -= BOXL;
-			if (body[i][Z_VEL] <  -BOXL * 0.5) body[i][Z_VEL] += BOXL;
-			if (body[i][Z_VEL] >=  BOXL * 0.5) body[i][Z_VEL] -= BOXL;
+			if (body[i * N + X_VEL] <  -BOXL * 0.5) body[i * N + X_VEL] += BOXL;
+			if (body[i * N + X_VEL] >=  BOXL * 0.5) body[i * N + X_VEL] -= BOXL;
+			if (body[i * N + Y_VEL] <  -BOXL * 0.5) body[i * N + Y_VEL] += BOXL;
+			if (body[i * N + Y_VEL] >=  BOXL * 0.5) body[i * N + Y_VEL] -= BOXL;
+			if (body[i * N + Z_VEL] <  -BOXL * 0.5) body[i * N + Z_VEL] += BOXL;
+			if (body[i * N + Z_VEL] >=  BOXL * 0.5) body[i * N + Z_VEL] -= BOXL;
 
 			// Update positions
-			body[i][X_POS] += body[i][X_VEL] * dt;
-			body[i][Y_POS] += body[i][Y_VEL] * dt;
-			body[i][Z_POS] += body[i][Z_VEL] * dt;
+			body[i * N + X_POS] += body[i * N + X_VEL] * dt;
+			body[i * N + Y_POS] += body[i * N + Y_VEL] * dt;
+			body[i * N + Z_POS] += body[i * N + Z_VEL] * dt;
 
 			// Periodic boundary conditions
-			if (body[i][X_POS] <  -BOXL * 0.5) body[i][X_POS] += BOXL;
-			if (body[i][X_POS] >=  BOXL * 0.5) body[i][X_POS] -= BOXL;
-			if (body[i][Y_POS] <  -BOXL * 0.5) body[i][Y_POS] += BOXL;
-			if (body[i][Y_POS] >=  BOXL * 0.5) body[i][Y_POS] -= BOXL;
-			if (body[i][Z_POS] <  -BOXL * 0.5) body[i][Z_POS] += BOXL;
-			if (body[i][Z_POS] >=  BOXL * 0.5) body[i][Z_POS] -= BOXL;
+			if (body[i * N + X_POS] <  -BOXL * 0.5) body[i * N + X_POS] += BOXL;
+			if (body[i * N + X_POS] >=  BOXL * 0.5) body[i * N + X_POS] -= BOXL;
+			if (body[i * N + Y_POS] <  -BOXL * 0.5) body[i * N + Y_POS] += BOXL;
+			if (body[i * N + Y_POS] >=  BOXL * 0.5) body[i * N + Y_POS] -= BOXL;
+			if (body[i * N + Z_POS] <  -BOXL * 0.5) body[i * N + Z_POS] += BOXL;
+			if (body[i * N + Z_POS] >=  BOXL * 0.5) body[i * N + Z_POS] -= BOXL;
 
 		}
 
@@ -189,20 +191,15 @@ int main (int argc, char *argv[]) {
 		fprintf(f, "MODEL %8d\n", t+1);
 		for (int i = 0; i < N; i++) {
 			printf("%s%7d  %s %s %s%4d    %8.3f%8.3f%8.3f  %4.2f  %4.3f\n",
-					"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i][X_POS], body[i][Y_POS], body[i][Z_POS], 1.00, 0.00);
+					"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i * N + X_POS], body[i * N + Y_POS], body[i * N + Z_POS], 1.00, 0.00);
 			fprintf(f, "%s%7d  %s %s %s%4d    %8.3f%8.3f%8.3f  %4.2f  %4.3f\n",
-					"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i][X_POS], body[i][Y_POS], body[i][Z_POS], 1.00, 0.00);
+					"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i * N + X_POS], body[i * N + Y_POS], body[i * N + Z_POS], 1.00, 0.00);
 		}
 		printf("TER\nENDMDL\n");
 		fprintf(f, "TER\nENDMDL\n");
 	}  // end of time period loop
-
-	
-	
 	
 	//------------------------------------------------------------------------------------------
-	
-	
 	
 	fclose(f);
 	
@@ -224,10 +221,10 @@ __global__ void nbody (curandState_t* states, float* body, float* Fx_dir, float*
 
 		if (i != currentBodyID) {
 			// TODO: calculate position difference between body i and x in x-,y-, and z-directions
-			x_diff = body[i][X_POS] - body[currentBodyID][X_POS];
-			y_diff = body[i][Y_POS] - body[currentBodyID][Y_POS];
-			z_diff = body[i][Z_POS] - body[currentBodyID][Z_POS];
 
+			x_diff = body[i * N + X_POS] - body[currentBodyID * N + X_POS];
+			y_diff = body[i * N + Y_POS] - body[currentBodyID * N + Y_POS];
+			z_diff = body[i * N + Z_POS] - body[currentBodyID * N + Z_POS];
 
 			// periodic boundary conditions
 			if (x_diff <  -BOXL * 0.5) x_diff += BOXL;
@@ -252,7 +249,7 @@ __global__ void nbody (curandState_t* states, float* body, float* Fx_dir, float*
 			if (r > 2.0) {
 				// Compute gravitational force between body i and x
 				//F = G * m1 * m2 / rr
-				Fg = (G * body[i][MASS] * body[currentBodyID][MASS]) / rr; /* Added. Check this, something might not be right - Cho */
+				Fg = (G * body[i * N + MASS] * body[currentBodyID * N + MASS]) / rr; /* Added. Check this, something might not be right - Cho */
 
 				// Compute frictional force
 				//Fr = MU * (drand48() - 0.5); // Added // Bug fix: range [0.5, 0.5]. Revert just take out -0.5
