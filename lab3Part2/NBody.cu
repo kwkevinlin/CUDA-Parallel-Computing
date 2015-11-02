@@ -5,7 +5,6 @@
 #include <curand.h>
 #include <curand_kernel.h>
 
-float body[10000][7]; // data array of bodies
 #define MASS 0     // row in array for mass
 #define X_POS 1    // row in array for x position
 #define Y_POS 2    // row in array for y position
@@ -22,8 +21,8 @@ float body[10000][7]; // data array of bodies
 float dt = 0.05; // time interval
 
 
-//__global__ void init (unsigned int, curandState_t*);
-__global__ void nbody (float*, float*, float*);
+__global__ void init (unsigned int, curandState_t*);
+__global__ void nbody (curandState_t*, float**, float*, float*, float*);
 
 int main (int argc, char *argv[]) {
 
@@ -50,13 +49,10 @@ int main (int argc, char *argv[]) {
 	}
 	
 	//------------------------------------------------------------------------------------------
-	/*
-	//Starting curand_unit since it's slower
 	curandState_t* dev_states; //keep track of seed value for every thread
 	cudaMalloc((void**) &dev_states, N * sizeof(curandState_t)); //N
 	//initialize all of the random states on the GPU
-	init<<<(int)ceil(N/Threads) + 1, Threads>>>(time(NULL), dev_states); //N
-	*/	
+	init<<<(int)ceil(N/1) + 1, N>>>(time(NULL), dev_states); //N
 	//------------------------------------------------------------------------------------------
 
 	/* Following section CANNOT be PARALLELIZED yet */
@@ -65,11 +61,13 @@ int main (int argc, char *argv[]) {
 		tmax = timesteps
 	*/
 
-	// Allocate to heap because N could potentially be huge
-	float *Fx_dir = (float *)malloc(N * sizeof(float)); 
+	float **body = (float **)malloc(10000 * sizeof(float *));
+    for (int i = 0; i < 10000; i++)
+         body[i] = (float *)malloc(7 * sizeof(float));
+	float *Fx_dir = (float *)malloc(N * sizeof(float)); //Probably don't need to put these on heap
 	float *Fy_dir = (float *)malloc(N * sizeof(float)); 
 	float *Fz_dir = (float *)malloc(N * sizeof(float)); 
-	float *dev_fx, *dev_fy, *dev_fz;
+	float **dev_body, *dev_fx, *dev_fy, *dev_fz;
 
 	srand48(time(NULL));
 
@@ -114,23 +112,27 @@ int main (int argc, char *argv[]) {
 				Initiate CUDA call
 		*/
 
+		cudaMalloc((void**) &dev_body, 10000 * 7 * sizeof(float));
 		cudaMalloc((void**) &dev_fx, N * sizeof(float));
 		cudaMalloc((void**) &dev_fy, N * sizeof(float));
 		cudaMalloc((void**) &dev_fz, N * sizeof(float));
 		
+		cudaMemcpy(dev_body, &body, 10000 * 7 * sizeof(float), cudaMemcpyHostToDevice); 
 		cudaMemcpy(dev_fx, &Fx_dir, N * sizeof(float), cudaMemcpyHostToDevice); //Check this, could be faulty
 		cudaMemcpy(dev_fy, &Fy_dir, N * sizeof(float), cudaMemcpyHostToDevice);
 		cudaMemcpy(dev_fz, &Fz_dir, N * sizeof(float), cudaMemcpyHostToDevice);
 		
 		//<<<(int)ceil(points/Threads) + 1, Threads>>>
-		nbody<<<N, 1>>>(dev_fx, dev_fy, dev_fz);
+		nbody<<<N, 1>>>(dev_states, dev_body, dev_fx, dev_fy, dev_fz);
 		
 		cudaThreadSynchronize();
 		
-		cudaMemcpy(Fx_dir, dev_fx, N * sizeof(int), cudaMemcpyDeviceToHost);
-		cudaMemcpy(Fy_dir, dev_fy, N * sizeof(int), cudaMemcpyDeviceToHost);
-		cudaMemcpy(Fz_dir, dev_fz, N * sizeof(int), cudaMemcpyDeviceToHost);
+		cudaMemcpy(body, dev_body, 10000 * 7 * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(Fx_dir, dev_fx, N * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(Fy_dir, dev_fy, N * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(Fz_dir, dev_fz, N * sizeof(float), cudaMemcpyDeviceToHost);
 
+		cudaFree(dev_body);
 		cudaFree(dev_fx);
 		cudaFree(dev_fy);
 		cudaFree(dev_fz);
@@ -192,7 +194,7 @@ int main (int argc, char *argv[]) {
 	
 }
 
-__global__ void nbody (float* Fx_dir, float* Fy_dir, float* Fz_dir) { 
+__global__ void nbody (curandState_t* states, float** body, float* Fx_dir, float* Fy_dir, float* Fz_dir) {  //**
 
 	//This loop should run N times in total (aka, kernel should be called N times)
 	int currentBodyID = blockDim.x * blockIdx.x + threadIdx.x;
@@ -205,9 +207,9 @@ __global__ void nbody (float* Fx_dir, float* Fy_dir, float* Fz_dir) {
 
 		if (i != currentBodyID) {
 			// TODO: calculate position difference between body i and x in x-,y-, and z-directions
-			x_diff = body[i][X_POS] - body[x][X_POS];
-			y_diff = body[i][Y_POS] - body[x][Y_POS];
-			z_diff = body[i][Z_POS] - body[x][Z_POS];
+			x_diff = body[i][X_POS] - body[currentBodyID][X_POS];
+			y_diff = body[i][Y_POS] - body[currentBodyID][Y_POS];
+			z_diff = body[i][Z_POS] - body[currentBodyID][Z_POS];
 
 
 			// periodic boundary conditions
@@ -233,22 +235,24 @@ __global__ void nbody (float* Fx_dir, float* Fy_dir, float* Fz_dir) {
 			if (r > 2.0) {
 				// Compute gravitational force between body i and x
 				//F = G * m1 * m2 / rr
-				Fg = (G * body[i][MASS] * body[x][MASS]) / rr; /* Added. Check this, something might not be right - Cho */
+				Fg = (G * body[i][MASS] * body[currentBodyID][MASS]) / rr; /* Added. Check this, something might not be right - Cho */
 
 				// Compute frictional force
-				Fr = MU * (drand48() - 0.5); // Added // Bug fix: range [0.5, 0.5]. Revert just take out -0.5
-					
+				//Fr = MU * (drand48() - 0.5); // Added // Bug fix: range [0.5, 0.5]. Revert just take out -0.5
+				int globalId = blockDim.x * blockIdx.x + threadIdx.x;
+				Fr = MU * curand_uniform(&states[globalId]);
+				
 				F = Fg + Fr; // Added. Get total force
 
-				Fx_dir[x] += F * x_diff / r;  // resolve forces in x and y directions
-				Fy_dir[x] += F * y_diff / r;  // and accumulate forces
-				Fz_dir[x] += F * z_diff / r;  // 
+				Fx_dir[currentBodyID] += F * x_diff / r;  // resolve forces in x and y directions
+				Fy_dir[currentBodyID] += F * y_diff / r;  // and accumulate forces
+				Fz_dir[currentBodyID] += F * z_diff / r;  // 
 			} else {
 				// If too close, weak anti-gravitational force
 				float F = G * 0.01 * 0.01 / r;
-				Fx_dir[x] -= F * x_diff / r;  // resolve forces in x and y directions
-				Fy_dir[x] -= F * y_diff / r;  // and accumulate forces
-				Fz_dir[x] -= F * z_diff / r;  // 
+				Fx_dir[currentBodyID] -= F * x_diff / r;  // resolve forces in x and y directions
+				Fy_dir[currentBodyID] -= F * y_diff / r;  // and accumulate forces
+				Fz_dir[currentBodyID] -= F * z_diff / r;  // 
 			}
 		}
 	}
@@ -264,7 +268,3 @@ __global__ void init (unsigned int seed, curandState_t* states) {
 	0, // offset
 	&states[globalId]);
 } 
-
-
-
-
