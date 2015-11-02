@@ -5,7 +5,8 @@
 #include <curand.h>
 #include <curand_kernel.h>
 
-int BODY_SIZE = 5; //Easier for testing
+#define Threads 768
+
 #define MASS 0     // row in array for mass
 #define X_POS 1    // row in array for x position
 #define Y_POS 2    // row in array for y position
@@ -14,7 +15,7 @@ int BODY_SIZE = 5; //Easier for testing
 #define Y_VEL 5    // row in array for y velocity
 #define Z_VEL 6    // row in array for z velocity
 
-#define N 9999     // number of bodies
+#define N 10000     // number of bodies // 9999
 #define G 10       // "gravitational constant" (not really)
 #define MU 0.001   // "frictional coefficient" 
 #define BOXL 100.0 // periodic boundary box length
@@ -53,7 +54,7 @@ int main (int argc, char *argv[]) {
 	curandState_t* dev_states; //keep track of seed value for every thread
 	cudaMalloc((void**) &dev_states, N * sizeof(curandState_t)); //N
 	//initialize all of the random states on the GPU
-	init<<<(int)ceil(N/1) + 1, N>>>(time(NULL), dev_states); //N
+	init<<<(int)ceil(N/Threads) + 1, Threads>>>(time(NULL), dev_states); //N
 	//------------------------------------------------------------------------------------------
 
 	/* Following section CANNOT be PARALLELIZED yet */
@@ -63,17 +64,18 @@ int main (int argc, char *argv[]) {
 	*/
 
 	/*
-	float **body = (float **)malloc(BODY_SIZE * sizeof(float *));
-    for (int i = 0; i < BODY_SIZE; i++)
+	float **body = (float **)malloc(N * sizeof(float *));
+    for (int i = 0; i < N; i++)
          body[i] = (float *)malloc(7 * sizeof(float));
 	*/
 
-	int *body[BODY_SIZE];
-	for (int i = 0; i < BODY_SIZE;  i++)
+	float *body[N];
+	for (int i = 0; i < N;  i++)
 		body[i] = (float *)malloc(7 * sizeof(float));
 	/*
 		error: expression must have pointer-to-object type
 		Not sending in all the heap data too from body[i] = (float*)malloc(7* * sizeof(float)) ?
+		Goal: Avoid pointer arithmetic and use [][], or should we not do that?
 	*/
 
 	float *Fx_dir = (float *)malloc(N * sizeof(float)); //Probably don't need to put these on heap
@@ -124,22 +126,22 @@ int main (int argc, char *argv[]) {
 				Initiate CUDA call
 		*/
 
-		cudaMalloc((void**) &dev_body, BODY_SIZE * 7 * sizeof(float));
+		cudaMalloc((void**) &dev_body, N * 7 * sizeof(float));
 		cudaMalloc((void**) &dev_fx, N * sizeof(float));
 		cudaMalloc((void**) &dev_fy, N * sizeof(float));
 		cudaMalloc((void**) &dev_fz, N * sizeof(float));
 		
-		cudaMemcpy(dev_body, &body, BODY_SIZE * 7 * sizeof(float), cudaMemcpyHostToDevice); 
+		cudaMemcpy(dev_body, &body, N * 7 * sizeof(float), cudaMemcpyHostToDevice); 
 		cudaMemcpy(dev_fx, &Fx_dir, N * sizeof(float), cudaMemcpyHostToDevice); //Check this, could be faulty
 		cudaMemcpy(dev_fy, &Fy_dir, N * sizeof(float), cudaMemcpyHostToDevice);
 		cudaMemcpy(dev_fz, &Fz_dir, N * sizeof(float), cudaMemcpyHostToDevice);
 		
 		//<<<(int)ceil(points/Threads) + 1, Threads>>>
-		nbody<<<N, 1>>>(dev_states, dev_body, dev_fx, dev_fy, dev_fz);
+		nbody<<<(int)ceil(N/Threads) + 1, Threads>>>(dev_states, dev_body, dev_fx, dev_fy, dev_fz);
 		
 		cudaThreadSynchronize();
 		
-		cudaMemcpy(body, dev_body, BODY_SIZE * 7 * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(body, dev_body, N * 7 * sizeof(float), cudaMemcpyDeviceToHost);
 		cudaMemcpy(Fx_dir, dev_fx, N * sizeof(float), cudaMemcpyDeviceToHost);
 		cudaMemcpy(Fy_dir, dev_fy, N * sizeof(float), cudaMemcpyDeviceToHost);
 		cudaMemcpy(Fz_dir, dev_fz, N * sizeof(float), cudaMemcpyDeviceToHost);
@@ -210,6 +212,9 @@ __global__ void nbody (curandState_t* states, float* body, float* Fx_dir, float*
 
 	//This loop should run N times in total (aka, kernel should be called N times)
 	int currentBodyID = blockDim.x * blockIdx.x + threadIdx.x;
+
+	if (currentBodyID >= N) //Since if N = 10000, body[10000] shouldn't work either
+		return;
 
 	for (int i = 0; i < N; i++) { // All other bodies 
 
