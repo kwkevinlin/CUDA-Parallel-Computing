@@ -22,7 +22,7 @@ float body[10000][7]; // data array of bodies
 float dt = 0.05; // time interval
 
 
-__global__ void init (unsigned int, curandState_t*);
+//__global__ void init (unsigned int, curandState_t*);
 __global__ void nbody (float*, float*, float*);
 
 int main (int argc, char *argv[]) {
@@ -43,20 +43,20 @@ int main (int argc, char *argv[]) {
 	}
 
 	int timesteps = atoi(argv[1]);
-	if (points < 0) {
+	if (timesteps < 0) {
 		printf("Input must be a positive number!\n"
 			   "Program gracefully terminated.\n");
 		exit(0);
 	}
 	
 	//------------------------------------------------------------------------------------------
-	
+	/*
 	//Starting curand_unit since it's slower
 	curandState_t* dev_states; //keep track of seed value for every thread
 	cudaMalloc((void**) &dev_states, N * sizeof(curandState_t)); //N
 	//initialize all of the random states on the GPU
 	init<<<(int)ceil(N/Threads) + 1, Threads>>>(time(NULL), dev_states); //N
-	
+	*/	
 	//------------------------------------------------------------------------------------------
 
 	/* Following section CANNOT be PARALLELIZED yet */
@@ -193,13 +193,17 @@ int main (int argc, char *argv[]) {
 }
 
 __global__ void nbody (float* Fx_dir, float* Fy_dir, float* Fz_dir) { 
-	for (int i = 0; i < N; i++) {   // all other bodies 
+
+	//This loop should run N times in total (aka, kernel should be called N times)
+	int currentBodyID = blockDim.x * blockIdx.x + threadIdx.x;
+
+	for (int i = 0; i < N; i++) { // All other bodies 
 
 		/* Each body interacting with every other pair */
 		// position differences in x-, y-, and z-directions
 		float x_diff, y_diff, z_diff;
 
-		if (i != x) {
+		if (i != currentBodyID) {
 			// TODO: calculate position difference between body i and x in x-,y-, and z-directions
 			x_diff = body[i][X_POS] - body[x][X_POS];
 			y_diff = body[i][Y_POS] - body[x][Y_POS];
