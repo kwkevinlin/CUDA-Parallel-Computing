@@ -15,7 +15,8 @@
 #define Y_VEL 5    // row in array for y velocity
 #define Z_VEL 6    // row in array for z velocity
 
-#define N 10000     // number of bodies // 9999
+#define N 10000    // number of bodies // 9999
+#define COL 7	   //Easy for traversal
 #define G 10       // "gravitational constant" (not really)
 #define MU 0.001   // "frictional coefficient" 
 #define BOXL 100.0 // periodic boundary box length
@@ -24,6 +25,7 @@ float dt = 0.05; // time interval
 
 
 __global__ void init (unsigned int, curandState_t*);
+__global__ void initAssign(curandState_t*, float*);
 __global__ void nbody (curandState_t*, float*, float*, float*, float*);
 
 int main (int argc, char *argv[]) {
@@ -49,7 +51,8 @@ int main (int argc, char *argv[]) {
 			   "Program gracefully terminated.\n");
 		exit(0);
 	}
-	
+	cudaSetDevice(1);
+	printf("Before initrand\n");
 	//------------------------------------------------------------------------------------------
 	curandState_t* dev_states; //keep track of seed value for every thread
 	cudaMalloc((void**) &dev_states, N * sizeof(curandState_t)); //N
@@ -63,53 +66,40 @@ int main (int argc, char *argv[]) {
 		tmax = timesteps
 	*/
 
-	//float body[N * 7];
-    float *body = (float *)malloc(N * 7 * sizeof(float));
+	float body[N * 7];
+    //float *body = (float *)malloc(N * 7 * sizeof(float));
 
-	/*
-	float **body = (float **)malloc(N * sizeof(float *));
-    for (int i = 0; i < N; i++)
-         body[i] = (float *)malloc(7 * sizeof(float));
-
-    //float *body = (float *)malloc(10000 * 7 * sizeof(float));
-
-    float body[N*7];
-    body[i*N+X_POS];
-    cudaMalloc((void**) &dev_body, N * 7 * sizeof(float));
-
-	*/
-
-    float *Fx_dir = (float *)malloc(N * sizeof(float)); //Probably don't need to put these on heap
+	float *Fx_dir = (float *)malloc(N * sizeof(float)); //Probably don't need to put these on heap
 	float *Fy_dir = (float *)malloc(N * sizeof(float)); 
-	float *Fz_dir = (float *)malloc(N * sizeof(float)); 
+	float *Fz_dir = (float *)malloc(N * sizeof(float));
 	float *dev_body, *dev_fx, *dev_fy, *dev_fz;
 
-	srand48(time(NULL));
+	cudaMalloc((void**) &dev_body, N * 7 * sizeof(float));
+	cudaMalloc((void**) &dev_fx, N * sizeof(float));
+	cudaMalloc((void**) &dev_fy, N * sizeof(float));
+	cudaMalloc((void**) &dev_fz, N * sizeof(float));
 
+	//------------------------------------------------------------------------------------------
 	// Assign each body a random initial positions and velocities
-	for (int i = 0; i < N; i++) {
-		body[i * N + MASS] = 0.001;
-
-		body[i * N + X_VEL] = drand48();
-		body[i * N + Y_VEL] = drand48();
-		body[i * N + Z_VEL] = drand48();
-
-		body[i * N + X_POS] = drand48();
-		body[i * N + Y_POS] = drand48();
-		body[i * N + Z_POS] = drand48();
-	}	
+	cudaMemcpy(dev_body, &body, N * 7 * sizeof(float), cudaMemcpyHostToDevice); 
+	initAssign<<<(int)ceil(N/Threads) + 1, Threads>>>(dev_states, dev_body);
+	cudaThreadSynchronize();
+	//Do I need this?	
+	cudaMemcpy(body, dev_body, N * 7 * sizeof(float), cudaMemcpyDeviceToHost);
+	//------------------------------------------------------------------------------------------
 
 	// Print out initial positions in PDB format
+	/*
 	printf("MODEL %8d\n", 0);
 	fprintf(f, "MODEL %8d\n", 0);
 	for (int i = 0; i < N; i++) {
 		printf("%s%7d  %s %s %s%4d    %8.3f%8.3f%8.3f  %4.2f  %4.3f\n",
-				"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i * N + X_POS], body[i * N + Y_POS], body[i * N + Z_POS], 1.00, 0.00);
+				"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i * COL + X_POS], body[i * COL + Y_POS], body[i * COL + Z_POS], 1.00, 0.00);
 		fprintf(f, "%s%7d  %s %s %s%4d    %8.3f%8.3f%8.3f  %4.2f  %4.3f\n",
-				"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i * N + X_POS], body[i * N + Y_POS], body[i * N + Z_POS], 1.00, 0.00);
+				"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i * COL + X_POS], body[i * COL + Y_POS], body[i * COL + Z_POS], 1.00, 0.00);
 	}
 	printf("TER\nENDMDL\n");
-	fprintf(f, "TER\nENDMDL\n");
+	fprintf(f, "TER\nENDMDL\n");*/
 
 	// Step through each time step
 	for (int t = 0; t < timesteps; t++) { 
@@ -126,12 +116,7 @@ int main (int argc, char *argv[]) {
 
 				Initiate CUDA call
 		*/
-
-		cudaMalloc((void**) &dev_body, N * 7 * sizeof(float));
-		cudaMalloc((void**) &dev_fx, N * sizeof(float));
-		cudaMalloc((void**) &dev_fy, N * sizeof(float));
-		cudaMalloc((void**) &dev_fz, N * sizeof(float));
-		
+ 
 		cudaMemcpy(dev_body, &body, N * 7 * sizeof(float), cudaMemcpyHostToDevice); 
 		cudaMemcpy(dev_fx, &Fx_dir, N * sizeof(float), cudaMemcpyHostToDevice); //Check this, could be faulty
 		cudaMemcpy(dev_fy, &Fy_dir, N * sizeof(float), cudaMemcpyHostToDevice);
@@ -159,44 +144,45 @@ int main (int argc, char *argv[]) {
 		for (int i = 0; i < N; i++) {
 
 			// Update velocities
-			body[i * N + X_VEL] += Fx_dir[i] * dt / body[i * N + MASS];
-			body[i * N + Y_VEL] += Fy_dir[i] * dt / body[i * N + MASS];
-			body[i * N + Z_VEL] += Fz_dir[i] * dt / body[i * N + MASS];
+			body[i * COL + X_VEL] += Fx_dir[i] * dt / body[i * COL + MASS];
+			body[i * COL + Y_VEL] += Fy_dir[i] * dt / body[i * COL + MASS];
+			body[i * COL + Z_VEL] += Fz_dir[i] * dt / body[i * COL + MASS];
 
 			// periodic boundary conditions
-			if (body[i * N + X_VEL] <  -BOXL * 0.5) body[i * N + X_VEL] += BOXL;
-			if (body[i * N + X_VEL] >=  BOXL * 0.5) body[i * N + X_VEL] -= BOXL;
-			if (body[i * N + Y_VEL] <  -BOXL * 0.5) body[i * N + Y_VEL] += BOXL;
-			if (body[i * N + Y_VEL] >=  BOXL * 0.5) body[i * N + Y_VEL] -= BOXL;
-			if (body[i * N + Z_VEL] <  -BOXL * 0.5) body[i * N + Z_VEL] += BOXL;
-			if (body[i * N + Z_VEL] >=  BOXL * 0.5) body[i * N + Z_VEL] -= BOXL;
+			if (body[i * COL + X_VEL] <  -BOXL * 0.5) body[i * COL + X_VEL] += BOXL;
+			if (body[i * COL + X_VEL] >=  BOXL * 0.5) body[i * COL + X_VEL] -= BOXL;
+			if (body[i * COL + Y_VEL] <  -BOXL * 0.5) body[i * COL + Y_VEL] += BOXL;
+			if (body[i * COL + Y_VEL] >=  BOXL * 0.5) body[i * COL + Y_VEL] -= BOXL;
+			if (body[i * COL + Z_VEL] <  -BOXL * 0.5) body[i * COL + Z_VEL] += BOXL;
+			if (body[i * COL + Z_VEL] >=  BOXL * 0.5) body[i * COL + Z_VEL] -= BOXL;
 
 			// Update positions
-			body[i * N + X_POS] += body[i * N + X_VEL] * dt;
-			body[i * N + Y_POS] += body[i * N + Y_VEL] * dt;
-			body[i * N + Z_POS] += body[i * N + Z_VEL] * dt;
+			body[i * COL + X_POS] += body[i * COL + X_VEL] * dt;
+			body[i * COL + Y_POS] += body[i * COL + Y_VEL] * dt;
+			body[i * COL + Z_POS] += body[i * COL + Z_VEL] * dt;
 
 			// Periodic boundary conditions
-			if (body[i * N + X_POS] <  -BOXL * 0.5) body[i * N + X_POS] += BOXL;
-			if (body[i * N + X_POS] >=  BOXL * 0.5) body[i * N + X_POS] -= BOXL;
-			if (body[i * N + Y_POS] <  -BOXL * 0.5) body[i * N + Y_POS] += BOXL;
-			if (body[i * N + Y_POS] >=  BOXL * 0.5) body[i * N + Y_POS] -= BOXL;
-			if (body[i * N + Z_POS] <  -BOXL * 0.5) body[i * N + Z_POS] += BOXL;
-			if (body[i * N + Z_POS] >=  BOXL * 0.5) body[i * N + Z_POS] -= BOXL;
+			if (body[i * COL + X_POS] <  -BOXL * 0.5) body[i * COL + X_POS] += BOXL;
+			if (body[i * COL + X_POS] >=  BOXL * 0.5) body[i * COL + X_POS] -= BOXL;
+			if (body[i * COL + Y_POS] <  -BOXL * 0.5) body[i * COL + Y_POS] += BOXL;
+			if (body[i * COL + Y_POS] >=  BOXL * 0.5) body[i * COL + Y_POS] -= BOXL;
+			if (body[i * COL + Z_POS] <  -BOXL * 0.5) body[i * COL + Z_POS] += BOXL;
+			if (body[i * COL + Z_POS] >=  BOXL * 0.5) body[i * COL + Z_POS] -= BOXL;
 
 		}
-
+/*
 		// Print out positions in PDB format
 		printf("MODEL %8d\n", t+1);
 		fprintf(f, "MODEL %8d\n", t+1);
 		for (int i = 0; i < N; i++) {
 			printf("%s%7d  %s %s %s%4d    %8.3f%8.3f%8.3f  %4.2f  %4.3f\n",
-					"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i * N + X_POS], body[i * N + Y_POS], body[i * N + Z_POS], 1.00, 0.00);
+					"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i * COL + X_POS], body[i * COL + Y_POS], body[i * COL + Z_POS], 1.00, 0.00);
 			fprintf(f, "%s%7d  %s %s %s%4d    %8.3f%8.3f%8.3f  %4.2f  %4.3f\n",
-					"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i * N + X_POS], body[i * N + Y_POS], body[i * N + Z_POS], 1.00, 0.00);
+					"ATOM", i+1, "CA ", "GLY", "A", i+1, body[i * COL + X_POS], body[i * COL + Y_POS], body[i * COL + Z_POS], 1.00, 0.00);
 		}
 		printf("TER\nENDMDL\n");
 		fprintf(f, "TER\nENDMDL\n");
+		*/
 	}  // end of time period loop
 	
 	//------------------------------------------------------------------------------------------
@@ -222,9 +208,9 @@ __global__ void nbody (curandState_t* states, float* body, float* Fx_dir, float*
 		if (i != currentBodyID) {
 			// TODO: calculate position difference between body i and x in x-,y-, and z-directions
 
-			x_diff = body[i * N + X_POS] - body[currentBodyID * N + X_POS];
-			y_diff = body[i * N + Y_POS] - body[currentBodyID * N + Y_POS];
-			z_diff = body[i * N + Z_POS] - body[currentBodyID * N + Z_POS];
+			x_diff = body[i * COL + X_POS] - body[currentBodyID * COL + X_POS];
+			y_diff = body[i * COL + Y_POS] - body[currentBodyID * COL + Y_POS];
+			z_diff = body[i * COL + Z_POS] - body[currentBodyID * COL + Z_POS];
 
 			// periodic boundary conditions
 			if (x_diff <  -BOXL * 0.5) x_diff += BOXL;
@@ -249,7 +235,7 @@ __global__ void nbody (curandState_t* states, float* body, float* Fx_dir, float*
 			if (r > 2.0) {
 				// Compute gravitational force between body i and x
 				//F = G * m1 * m2 / rr
-				Fg = (G * body[i * N + MASS] * body[currentBodyID * N + MASS]) / rr; /* Added. Check this, something might not be right - Cho */
+				Fg = (G * body[i * COL + MASS] * body[currentBodyID * COL + MASS]) / rr; /* Added. Check this, something might not be right - Cho */
 
 				// Compute frictional force
 				//Fr = MU * (drand48() - 0.5); // Added // Bug fix: range [0.5, 0.5]. Revert just take out -0.5
@@ -271,6 +257,26 @@ __global__ void nbody (curandState_t* states, float* body, float* Fx_dir, float*
 		}
 	}
 	
+}
+
+__global__ void initAssign(curandState_t* states, float* body) {
+	int currentBodyID = blockDim.x * blockIdx.x + threadIdx.x;
+	if (currentBodyID >= N)
+		return;
+
+	body[currentBodyID * COL + MASS] = 0.001;
+
+	body[currentBodyID * COL + X_VEL] = curand_uniform(&states[currentBodyID]);
+	body[currentBodyID * COL + Y_VEL] = curand_uniform(&states[currentBodyID]);
+	body[currentBodyID * COL + Z_VEL] = curand_uniform(&states[currentBodyID]);
+
+	body[currentBodyID * COL + X_POS] = curand_uniform(&states[currentBodyID]);
+	body[currentBodyID * COL + Y_POS] = curand_uniform(&states[currentBodyID]);
+	body[currentBodyID * COL + Z_POS] = curand_uniform(&states[currentBodyID]);
+
+	printf("%f, %f, %f, %f, %f, %f, %f", body[currentBodyID * COL + 0], body[currentBodyID * COL + 1], 
+		body[currentBodyID * COL + 2], body[currentBodyID * COL + 3], body[currentBodyID * COL + 4], 
+		body[currentBodyID * COL + 5], body[currentBodyID * COL + 6]);
 }
 
 // Initialize the random states
