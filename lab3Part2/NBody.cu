@@ -55,7 +55,7 @@ int main(int argc, char *argv[]) {
 
 	cudaSetDevice(1);
 
-	printf("Running init\n");
+	//printf("Running init\n");
 	//------------------------------------------------------------------------------------------
 	curandState_t* dev_states; //keep track of seed value for every thread
 	cudaMalloc((void**)&dev_states, N * sizeof(curandState_t)); //N
@@ -86,14 +86,13 @@ int main(int argc, char *argv[]) {
 	cudaMalloc((void**)&dev_fy, N * sizeof(float));
 	cudaMalloc((void**)&dev_fz, N * sizeof(float));
 
+	printf("Running NBody simulation and outputting result to NBody.pdb\n");
 
 	// Assign each body a random initial positions and velocities
 	cudaMemcpy(dev_body, &body, N * 7 * sizeof(float), cudaMemcpyHostToDevice);
 	initAssign<<<(int)ceil(N / Threads) + 1, Threads >>>(dev_states, dev_body);
 	cudaThreadSynchronize();
 	cudaMemcpy(body, dev_body, N * 7 * sizeof(float), cudaMemcpyDeviceToHost);
-
-
 
 	// Print out initial positions in PDB format
 	//printf("MODEL %8d\n", 0);
@@ -107,7 +106,7 @@ int main(int argc, char *argv[]) {
 	//printf("TER\nENDMDL\n");
 	fprintf(f, "TER\nENDMDL\n");
 
-	printf("Before time loop\n");
+	//printf("Before time loop\n");
 
 	// Step through each time step
 	for (int t = 0; t < timesteps; t++) {
@@ -135,7 +134,7 @@ int main(int argc, char *argv[]) {
 		cudaMemcpy(dev_fy, Fy_dir, N * sizeof(float), cudaMemcpyHostToDevice);
 		cudaMemcpy(dev_fz, Fz_dir, N * sizeof(float), cudaMemcpyHostToDevice);
 
-		printf("Before: [0]: %f, [1]: %f, [2]: %f, [3]: %f, [4]: %f, [5]: %f, [6]: %f\n", body[0], body[1], body[2], body[3], body[4], body[5], body[6]);
+		//printf("Before: [0]: %f, [1]: %f, [2]: %f, [3]: %f, [4]: %f, [5]: %f, [6]: %f\n", body[0], body[1], body[2], body[3], body[4], body[5], body[6]);
 
 		//For each force on body x due to 
 		nbody<<<(int)ceil(N / Threads) + 1, Threads>>>(dev_states, dev_body, dev_fx, dev_fy, dev_fz); 
@@ -147,7 +146,7 @@ int main(int argc, char *argv[]) {
 		cudaMemcpy(Fy_dir, dev_fy, N * sizeof(float), cudaMemcpyDeviceToHost);
 		cudaMemcpy(Fz_dir, dev_fz, N * sizeof(float), cudaMemcpyDeviceToHost);
 
-		printf("After: [0]: %f, [1]: %f, [2]: %f, [3]: %f, [4]: %f, [5]: %f, [6]: %f\n", body[0], body[1], body[2], body[3], body[4], body[5], body[6]);
+		//printf("After: [0]: %f, [1]: %f, [2]: %f, [3]: %f, [4]: %f, [5]: %f, [6]: %f\n", body[0], body[1], body[2], body[3], body[4], body[5], body[6]);
 		//printf("After: %f, %f, %f, %f, %f\n", Fx_dir[0], Fx_dir[5], Fy_dir[300], Fy_dir[5320], Fz_dir[9998]);
 
 		//------------------------------------------------------------------------------------------
