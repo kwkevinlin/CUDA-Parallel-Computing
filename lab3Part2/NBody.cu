@@ -27,7 +27,7 @@ float dt = 0.05; // time interval
 __global__ void init(unsigned int, curandState_t*);
 __global__ void initAssign(curandState_t*, float*);
 __global__ void nbody(curandState_t*, float*, float*, float*, float*);
-void CUDAErrorCheck();
+__global__ void update(float, float*, float*, float*, float*);
 
 int main(int argc, char *argv[]) {
 
@@ -53,7 +53,7 @@ int main(int argc, char *argv[]) {
 		exit(0);
 	}
 
-	//CudaSetDevice(1);
+	cudaSetDevice(1);
 
 	printf("Running init\n");
 	//------------------------------------------------------------------------------------------
@@ -73,14 +73,14 @@ int main(int argc, char *argv[]) {
 	float body[N * 7];
 	//float *body = (float *)malloc(N * 7 * sizeof(float));
 
+	//float dtGpu = dt;
 	float Fx_dir[N];
 	float Fy_dir[N];
 	float Fz_dir[N];
-	//float *Fx_dir = (float *)malloc(N * sizeof(float)); //Probably don't need to put these on heap
-	//float *Fy_dir = (float *)malloc(N * sizeof(float));
-	//float *Fz_dir = (float *)malloc(N * sizeof(float));
-	float *dev_body, *dev_fx, *dev_fy, *dev_fz;
 
+	float *dev_body, *dev_dt, *dev_fx, *dev_fy, *dev_fz;
+
+	cudaMalloc((void**)&dev_dt, sizeof(float));
 	cudaMalloc((void**)&dev_body, N * 7 * sizeof(float));
 	cudaMalloc((void**)&dev_fx, N * sizeof(float));
 	cudaMalloc((void**)&dev_fy, N * sizeof(float));
@@ -141,7 +141,6 @@ int main(int argc, char *argv[]) {
 		nbody<<<(int)ceil(N / Threads) + 1, Threads>>>(dev_states, dev_body, dev_fx, dev_fy, dev_fz); 
 
 		cudaThreadSynchronize();
-		CUDAErrorCheck();
 
 		cudaMemcpy(body, dev_body, N * 7 * sizeof(float), cudaMemcpyDeviceToHost);
 		cudaMemcpy(Fx_dir, dev_fx, N * sizeof(float), cudaMemcpyDeviceToHost);
@@ -153,37 +152,23 @@ int main(int argc, char *argv[]) {
 
 		//------------------------------------------------------------------------------------------
 
-		/* PARALLELIZE THIS TOO - Can be inside above, or new kernel */
-		// update postions and velocity in array
-		for (int i = 0; i < N; i++) {
+		/* Update positions and velocity in array */
 
-			// Update velocities
-			body[i * COL + X_VEL] += Fx_dir[i] * dt / body[i * COL + MASS];
-			body[i * COL + Y_VEL] += Fy_dir[i] * dt / body[i * COL + MASS];
-			body[i * COL + Z_VEL] += Fz_dir[i] * dt / body[i * COL + MASS];
+		//cudaMemcpy(dev_dt, &dtGpu, sizeof(float), cudaMemcpyHostToDevice); //&
+		cudaMemcpy(dev_body, body, N * 7 * sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(dev_fx, Fx_dir, N * sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(dev_fy, Fy_dir, N * sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(dev_fz, Fz_dir, N * sizeof(float), cudaMemcpyHostToDevice);
 
-			// periodic boundary conditions
-			if (body[i * COL + X_VEL] <  -BOXL * 0.5) body[i * COL + X_VEL] += BOXL;
-			if (body[i * COL + X_VEL] >= BOXL * 0.5) body[i * COL + X_VEL] -= BOXL;
-			if (body[i * COL + Y_VEL] <  -BOXL * 0.5) body[i * COL + Y_VEL] += BOXL;
-			if (body[i * COL + Y_VEL] >= BOXL * 0.5) body[i * COL + Y_VEL] -= BOXL;
-			if (body[i * COL + Z_VEL] <  -BOXL * 0.5) body[i * COL + Z_VEL] += BOXL;
-			if (body[i * COL + Z_VEL] >= BOXL * 0.5) body[i * COL + Z_VEL] -= BOXL;
+		update<<<(int)ceil(N / Threads) + 1, Threads>>>(dt, dev_body, dev_fx, dev_fy, dev_fz);
+		cudaThreadSynchronize();
 
-			// Update positions
-			body[i * COL + X_POS] += body[i * COL + X_VEL] * dt;
-			body[i * COL + Y_POS] += body[i * COL + Y_VEL] * dt;
-			body[i * COL + Z_POS] += body[i * COL + Z_VEL] * dt;
+		cudaMemcpy(body, dev_body, N * 7 * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(Fx_dir, dev_fx, N * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(Fy_dir, dev_fy, N * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(Fz_dir, dev_fz, N * sizeof(float), cudaMemcpyDeviceToHost);
 
-			// Periodic boundary conditions
-			if (body[i * COL + X_POS] <  -BOXL * 0.5) body[i * COL + X_POS] += BOXL;
-			if (body[i * COL + X_POS] >= BOXL * 0.5) body[i * COL + X_POS] -= BOXL;
-			if (body[i * COL + Y_POS] <  -BOXL * 0.5) body[i * COL + Y_POS] += BOXL;
-			if (body[i * COL + Y_POS] >= BOXL * 0.5) body[i * COL + Y_POS] -= BOXL;
-			if (body[i * COL + Z_POS] <  -BOXL * 0.5) body[i * COL + Z_POS] += BOXL;
-			if (body[i * COL + Z_POS] >= BOXL * 0.5) body[i * COL + Z_POS] -= BOXL;
-
-		}
+	
 		// Print out positions in PDB format
 		//printf("MODEL %8d\n", t+1);
 		fprintf(f, "MODEL %8d\n", t+1);
@@ -199,6 +184,7 @@ int main(int argc, char *argv[]) {
 
 	cudaFree(dev_states);
 	cudaFree(dev_body);
+	cudaFree(dev_dt);
 	cudaFree(dev_fx);
 	cudaFree(dev_fy);
 	cudaFree(dev_fz);
@@ -301,6 +287,40 @@ __global__ void initAssign(curandState_t* states, float* body) {
 		body[currentBodyID * COL + 5], body[currentBodyID * COL + 6]);*/
 }
 
+__global__ void update(float dtGpu, float* body, float* Fx_dir, float* Fy_dir, float* Fz_dir) {
+
+	int currentBodyID = blockDim.x * blockIdx.x + threadIdx.x;
+	if (currentBodyID >= N)
+		return;
+
+	// Update velocities
+	body[currentBodyID * COL + X_VEL] += Fx_dir[currentBodyID] * dtGpu / body[currentBodyID * COL + MASS];
+	body[currentBodyID * COL + Y_VEL] += Fy_dir[currentBodyID] * dtGpu / body[currentBodyID * COL + MASS];
+	body[currentBodyID * COL + Z_VEL] += Fz_dir[currentBodyID] * dtGpu / body[currentBodyID * COL + MASS];
+
+	// periodic boundary conditions
+	if (body[currentBodyID * COL + X_VEL] <  -BOXL * 0.5) body[currentBodyID * COL + X_VEL] += BOXL;
+	if (body[currentBodyID * COL + X_VEL] >= BOXL  * 0.5) body[currentBodyID * COL + X_VEL] -= BOXL;
+	if (body[currentBodyID * COL + Y_VEL] <  -BOXL * 0.5) body[currentBodyID * COL + Y_VEL] += BOXL;
+	if (body[currentBodyID * COL + Y_VEL] >= BOXL  * 0.5) body[currentBodyID * COL + Y_VEL] -= BOXL;
+	if (body[currentBodyID * COL + Z_VEL] <  -BOXL * 0.5) body[currentBodyID * COL + Z_VEL] += BOXL;
+	if (body[currentBodyID * COL + Z_VEL] >= BOXL  * 0.5) body[currentBodyID * COL + Z_VEL] -= BOXL;
+
+	// Update positions
+	body[currentBodyID * COL + X_POS] += body[currentBodyID * COL + X_VEL] * dtGpu;
+	body[currentBodyID * COL + Y_POS] += body[currentBodyID * COL + Y_VEL] * dtGpu;
+	body[currentBodyID * COL + Z_POS] += body[currentBodyID * COL + Z_VEL] * dtGpu;
+
+	// Periodic boundary conditions
+	if (body[currentBodyID * COL + X_POS] <  -BOXL * 0.5) body[currentBodyID * COL + X_POS] += BOXL;
+	if (body[currentBodyID * COL + X_POS] >= BOXL * 0.5) body[currentBodyID * COL + X_POS] -= BOXL;
+	if (body[currentBodyID * COL + Y_POS] <  -BOXL * 0.5) body[currentBodyID * COL + Y_POS] += BOXL;
+	if (body[currentBodyID * COL + Y_POS] >= BOXL * 0.5) body[currentBodyID * COL + Y_POS] -= BOXL;
+	if (body[currentBodyID * COL + Z_POS] <  -BOXL * 0.5) body[currentBodyID * COL + Z_POS] += BOXL;
+	if (body[currentBodyID * COL + Z_POS] >= BOXL * 0.5) body[currentBodyID * COL + Z_POS] -= BOXL;
+
+}
+
 // Initialize the random states
 __global__ void init(unsigned int seed, curandState_t* states) {
 	int globalId = blockDim.x * blockIdx.x + threadIdx.x;
@@ -311,8 +331,3 @@ __global__ void init(unsigned int seed, curandState_t* states) {
 		0, // offset
 		&states[globalId]);
 }
-
-void CUDAErrorCheck() {        
-cudaError_t error = cudaGetLastError();        
-if (error != cudaSuccess)        {                printf("CUDA -error : %s (%d)\n", cudaGetErrorString(error), error);                //exit(0);       
- } }
