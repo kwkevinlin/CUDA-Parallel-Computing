@@ -7,9 +7,9 @@
 
 #define Threads 768
 
-// __global__ void update(float, float*, float*, float*, float*);
-__global__ void computeHistogram(int);
+#define readBlockSize 5
 
+__global__ void computeHistogram(char*, int*, int*);
 __global__ void blankCall() {int i = 0; if (i == 0) {} };
 
 int main(int argc, char *argv[]) {
@@ -47,24 +47,38 @@ int main(int argc, char *argv[]) {
 
 
 
-	char inputString[5];
+	char inputString[readBlockSize];
 	int histogram[10] = {0};
 	int exitFlag = 0;
 
-	while(fgets(inputString, 5, input) != NULL) {
-		printf("%s\n", inputString);
-		for (int i = 0; i < sizeof(inputString)/sizeof('c') - 1; i++) {
-			if (inputString[i] == '.') continue;
-			else if (inputString[i] == '\0') { 
-				exitFlag = 1; 
-				break; 
-			}
-			printf("Reading: %c\n", inputString[i]);
-			histogram[inputString[i] - '0']++;
-		}
-		if (exitFlag == 1)
-			break;
+	char *dev_inputString; 
+	int *dev_histogram, *dev_exitFlag;
+	cudaMalloc((void**)&dev_inputString, sizeof(char) * readBlockSize);
+	cudaMalloc((void**)&dev_histogram, sizeof(int) * 10);
+	cudaMalloc((void**)&dev_exitFlag, sizeof(int));
+
+	/*
+		Send in:
+			char input array
+			in histogram array
+
+		computeHistogram(inputString, histogram, &exitFlag)
+	*/
+
+	cudaMemcpy(dev_histogram, &histogram, 10 * sizeof(int), cudaMemcpyHostToDevice);
+
+	while(fgets(inputString, readBlockSize, input) != NULL) {
+
+		printf("\t%s\n", inputString);
+
+		cudaMemcpy(dev_inputString, &inputString, readBlockSize * sizeof(char), cudaMemcpyHostToDevice);
+
+		computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads >>>(dev_inputString, dev_histogram, &exitFlag);
+		cudaDeviceSynchronize();
+
 	}
+
+	cudaMemcpy(histogram, dev_histogram, 10 * sizeof(int), cudaMemcpyDeviceToHost);
 
 	for (int i = 0; i < 10; i++) {
 		printf("[%i]: %i\n", i, histogram[i]);
@@ -85,7 +99,29 @@ int main(int argc, char *argv[]) {
 
 }
 
-__global__ void computeHistogram(int histArr[10]) {
-	
+__global__ void computeHistogram(char* inputArr, int* histArr, int* exitFlag) {
+
+	int globalID = blockDim.x * blockIdx.x + threadIdx.x;
+	if (globalID >= readBlockSize)
+		return;
+
+	//Return if '.', or EOL
+	if (inputArr[globalID] == '.') return;
+	else if (inputArr[globalID] == '\0') { 
+		*exitFlag = 1; 
+		return; 
+	}
+	printf("Reading: %c, %i\n", inputArr[globalID], globalID);
+	atomicAdd(&histArr[inputArr[globalID] - '0'], 1);
+
+	// for (int i = 0; i < sizeof(inputArr)/sizeof('c') - 1; i++) {
+	// 		if (inputArr[i] == '.') continue;
+	// 		else if (inputArr[i] == '\0') { 
+	// 			*exitFlag = 1; 
+	// 			return; 
+	// 		}
+	// 		printf("Reading: %c, %i\n", inputArr[i], i);
+	// 		histArr[inputArr[i] - '0']++;
+	// 	}
 }
 
