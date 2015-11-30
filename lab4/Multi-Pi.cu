@@ -40,23 +40,27 @@ int main(int argc, char *argv[]) {
 
 	//Timer and Dummy Call
 	blankCall<<<1, 1>>>();
+
+	cudaStream_t stream1;
+	cudaStreamCreate(&stream1);
+	cudaStream_t stream2;
+	cudaStreamCreate(&stream2); 
+
 	clock_t start, end;
 	double exec_time;
 	start = clock();
 
 	//===================================================
 
-
-
 	char inputString[readBlockSize];
 	int histogram[10] = {0};
-	int exitFlag = 0;
 
 	char *dev_inputString; 
-	int *dev_histogram, *dev_exitFlag;
+	int *dev_histogram;
 	cudaMalloc((void**)&dev_inputString, sizeof(char) * readBlockSize);
 	cudaMalloc((void**)&dev_histogram, sizeof(int) * 10);
-	cudaMalloc((void**)&dev_exitFlag, sizeof(int));
+	cudaHostAlloc((void**) &inputString, sizeof(char) * readBlockSize, cudaHostAllocDefault);
+	cudaHostAlloc((void**) &histogram, sizeof(int) * 10, cudaHostAllocDefault);
 
 	/*
 		Send in:
@@ -72,7 +76,7 @@ int main(int argc, char *argv[]) {
 		printf("\t%s\n", inputString);
 
 		cudaMemcpy(dev_inputString, &inputString, readBlockSize * sizeof(char), cudaMemcpyHostToDevice);
-
+		//cudaMemcpyAsync(dev_inputString, &inputString, readBlockSize * sizeof(char), cudaMemcpyHostToDevice, stream1);
 		computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads>>>(dev_inputString, dev_histogram);
 		cudaDeviceSynchronize();
 
