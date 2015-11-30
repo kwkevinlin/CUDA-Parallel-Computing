@@ -5,11 +5,12 @@
 #include <curand.h>
 #include <curand_kernel.h>
 
+//#define Threads 768
 #define Threads 768
 
-#define readBlockSize 5
+#define readBlockSize 7
 
-__global__ void computeHistogram(char*, int*, int*);
+__global__ void computeHistogram(char*, int*);
 __global__ void blankCall() {int i = 0; if (i == 0) {} };
 
 int main(int argc, char *argv[]) {
@@ -68,12 +69,11 @@ int main(int argc, char *argv[]) {
 	cudaMemcpy(dev_histogram, &histogram, 10 * sizeof(int), cudaMemcpyHostToDevice);
 
 	while(fgets(inputString, readBlockSize, input) != NULL) {
-
 		printf("\t%s\n", inputString);
 
 		cudaMemcpy(dev_inputString, &inputString, readBlockSize * sizeof(char), cudaMemcpyHostToDevice);
 
-		computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads >>>(dev_inputString, dev_histogram, &exitFlag);
+		computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads>>>(dev_inputString, dev_histogram);
 		cudaDeviceSynchronize();
 
 	}
@@ -93,24 +93,20 @@ int main(int argc, char *argv[]) {
 	exec_time = ((double) (end - start)) / CLOCKS_PER_SEC;
 	printf("\nExecution Time: %f\n", exec_time);
 
-
 	fclose(input);
 	fclose(output);
 
 }
 
-__global__ void computeHistogram(char* inputArr, int* histArr, int* exitFlag) {
+__global__ void computeHistogram(char* inputArr, int* histArr) {
 
 	int globalID = blockDim.x * blockIdx.x + threadIdx.x;
 	if (globalID >= readBlockSize)
 		return;
 
 	//Return if '.', or EOL
-	if (inputArr[globalID] == '.') return;
-	else if (inputArr[globalID] == '\0') { 
-		*exitFlag = 1; 
-		return; 
-	}
+	if (inputArr[globalID] == '.' || inputArr[globalID] == '\0') 
+		return;
 	printf("Reading: %c, %i\n", inputArr[globalID], globalID);
 	atomicAdd(&histArr[inputArr[globalID] - '0'], 1);
 
