@@ -59,27 +59,46 @@ int main(int argc, char *argv[]) {
 	int *dev_histogram;
 	cudaMalloc((void**)&dev_inputString, sizeof(char) * readBlockSize);
 	cudaMalloc((void**)&dev_histogram, sizeof(int) * 10);
-	// cudaHostAlloc((void**) &inputString, sizeof(char) * readBlockSize, cudaHostAllocDefault);
-	// cudaHostAlloc((void**) &histogram, sizeof(int) * 10, cudaHostAllocDefault);
+	//cudaHostAlloc((void**) &inputString, sizeof(char) * readBlockSize, cudaHostAllocDefault);
+	//cudaHostAlloc((void**) &histogram, sizeof(int) * 10, cudaHostAllocDefault);
 
+	cudaSetDevice(0);
+	cudaMemcpy(dev_histogram, &histogram, 10 * sizeof(int), cudaMemcpyHostToDevice);
+	cudaSetDevice(1);
 	cudaMemcpy(dev_histogram, &histogram, 10 * sizeof(int), cudaMemcpyHostToDevice);
 
 	while(fgets(inputString, readBlockSize, input) != NULL) {
 		printf("\t%s\n", inputString);
-
+		cudaSetDevice(0);
 		cudaMemcpy(dev_inputString, &inputString, readBlockSize * sizeof(char), cudaMemcpyHostToDevice);
-		//cudaMemcpyAsync(dev_inputString, &inputString, readBlockSize * sizeof(char), cudaMemcpyHostToDevice, stream1);
 		computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads>>>(dev_inputString, dev_histogram);
+		// cudaMemcpyAsync(dev_inputString, &inputString, readBlockSize * sizeof(char), cudaMemcpyHostToDevice, stream1);
+		// computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads, stream1>>>(dev_inputString, dev_histogram);
+
+		if (fgets(inputString, readBlockSize, input) != NULL) {
+			printf("Inside Nest\n");
+			cudaSetDevice(1);
+			cudaMemcpy(dev_inputString, &inputString, readBlockSize * sizeof(char), cudaMemcpyHostToDevice);
+			computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads>>>(dev_inputString, dev_histogram);
+			// cudaMemcpyAsync(dev_inputString, &inputString, readBlockSize * sizeof(char), cudaMemcpyHostToDevice, stream1);
+			// computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads, stream1>>>(dev_inputString, dev_histogram);
+		
+		}
+
 		cudaDeviceSynchronize();
+
 		printf("GPUs Synchronized (%i)\n", count);
 		count++;
 
 	}
-
+	int histogram2[10] = {0};
+	cudaSetDevice(0);
 	cudaMemcpy(histogram, dev_histogram, 10 * sizeof(int), cudaMemcpyDeviceToHost);
+	cudaSetDevice(1);
+	cudaMemcpy(histogram2, dev_histogram, 10 * sizeof(int), cudaMemcpyDeviceToHost);
 
 	for (int i = 0; i < 10; i++) {
-		printf("[%i]: %i\n", i, histogram[i]);
+		printf("[%i]: %i\n", i, histogram[i] + histogram2[i]);
 	}
 
 
@@ -103,9 +122,9 @@ __global__ void computeHistogram(char* inputArr, int* histArr) {
 		return;
 
 	//Return if '.', or EOL
-	if (inputArr[globalID] == '.' || inputArr[globalID] == '\0') 
+	if (inputArr[globalID] == '.' || inputArr[globalID] == '\0')
 		return;
-	printf("Reading: %c, %i\n", inputArr[globalID], globalID);
+	printf("Reading: %c\n", inputArr[globalID]);
 	atomicAdd(&histArr[inputArr[globalID] - '0'], 1);
 	// printf("Current [%i] = %i\n", inputArr[globalID] - '0', histArr[inputArr[globalID] - '0']);
 
