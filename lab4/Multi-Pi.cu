@@ -6,9 +6,9 @@
 #include <curand_kernel.h>
 
 //#define Threads 768
-#define Threads 768
+#define Threads 500
 
-#define readBlockSize 6
+#define readBlockSize 100000
 
 __global__ void computeHistogram(char*, int*);
 __global__ void blankCall() {int i = 0; if (i == 0) {} };
@@ -49,7 +49,8 @@ int main(int argc, char *argv[]) {
 
 	//===================================================
 
-	char inputString[readBlockSize];
+	//char inputString[readBlockSize];
+	char* inputString = (char*)malloc(sizeof(char) * readBlockSize);
 	int histogram[10] = {0}, histogram2[10] = {0}, count = 1; 
 
 	char *dev_inputString1;
@@ -129,7 +130,7 @@ __global__ void computeHistogram(char* inputArr, int* histArr) {
 		return;
 	printf("Reading: %c\n", inputArr[globalID]);
 	atomicAdd(&histArr[inputArr[globalID] - '0'], 1);
-	
+
 	// printf("Current [%i] = %i\n", inputArr[globalID] - '0', histArr[inputArr[globalID] - '0']);
 
 	// for (int i = 0; i < sizeof(inputArr)/sizeof('c') - 1; i++) {
