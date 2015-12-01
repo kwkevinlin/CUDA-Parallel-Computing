@@ -16,6 +16,10 @@ __global__ void blankCall() {int i = 0; if (i == 0) {} };
 
 int main(int argc, char *argv[]) {
 
+	clock_t start, end;
+	double exec_time;
+	start = clock();
+
 	if (argc != 2) {
 		printf("\nError: Number of arguments incorrect.\n"
 			"There can only be 1 additional argument, which is the name of the file.\n"
@@ -45,10 +49,6 @@ int main(int argc, char *argv[]) {
 	cudaSetDevice(1);
 	cudaStream_t stream2;
 	cudaStreamCreate(&stream2); 
-
-	clock_t start, end;
-	double exec_time;
-	start = clock();
 
 	//===================================================
 
@@ -80,7 +80,7 @@ int main(int argc, char *argv[]) {
 		cudaMemcpy(dev_histogram2, histogram, 10 * sizeof(int), cudaMemcpyHostToDevice);
 
 	int tmp[12] = {0};
-	fgets(inputString1, 12, input); //12
+	fgets(inputString1, 12, input); //12, fgets reads in 12 (including \0), so
 	for (int i = 0; i < 11; i++) {
 		tmp[inputString1[i] - '0']++;
 		//printf("%i ", inputString1[i] - '0');
