@@ -6,9 +6,12 @@
 #define readBlockSize 10000000
 
 /*
-	A little hackish once digits of pi exceed 67~ million. See lines 80-84.
-	For digits of pi lower than that, commenting out lines 81-84 should do. Leave
-	line 80 uncommented so printf and fprintf from lines 135-136 will remain functional.
+	A little hackish once digits of pi exceed 67~ million. See lines 85-89.
+	For digits of pi lower than that, commenting out lines 86-89 should do. Leave
+	line 85 uncommented so printf and fprintf from lines 133-134 will remain functional.
+	
+	Recommendation for future optimization: Memset inputString to contain all \0, then 
+	check in kernel. If \0, return. Removes need for hack mentioned above.
 */
 
 __global__ void computeHistogram(char*, int*);
