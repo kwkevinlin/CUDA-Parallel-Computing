@@ -50,40 +50,48 @@ int main(int argc, char *argv[]) {
 	//===================================================
 
 	//char inputString[readBlockSize];
-	char* inputString = (char*)malloc(sizeof(char) * readBlockSize);
-	int histogram[10] = {0}, histogram2[10] = {0}, count = 1; 
-
+	//char* inputString = (char*)malloc(sizeof(char) * readBlockSize);
+	//int histogram[10] = {0}, histogram2[10] = {0}, count = 1; 
+char* inputString1; char* inputString2; int* histogram;
+int histogram2[10] = {0}, count = 1;
 	char *dev_inputString1;
 	char *dev_inputString2; 
 	int *dev_histogram1;
 	int *dev_histogram2;
 
+	cudaHostAlloc((void**) &inputString1, sizeof(char) * readBlockSize, cudaHostAllocDefault);
+	cudaHostAlloc((void**) &inputString2, sizeof(char) * readBlockSize, cudaHostAllocDefault);
+	cudaHostAlloc((void**) &histogram, sizeof(int) * 10, cudaHostAllocDefault);
+	for (int i = 0; i < 10; i++) {
+		histogram[i] = 0;
+	}
+
 	cudaSetDevice(0);
 		blankCall<<<1, 1>>>();
 		cudaMalloc((void**)&dev_inputString1, sizeof(char) * readBlockSize);
 		cudaMalloc((void**)&dev_histogram1, sizeof(int) * 10);
-		cudaMemcpy(dev_histogram1, &histogram, 10 * sizeof(int), cudaMemcpyHostToDevice);
+		cudaMemcpy(dev_histogram1, histogram, 10 * sizeof(int), cudaMemcpyHostToDevice);
 	cudaSetDevice(1);
 		blankCall<<<1, 1>>>();
 		cudaMalloc((void**)&dev_inputString2, sizeof(char) * readBlockSize);
 		cudaMalloc((void**)&dev_histogram2, sizeof(int) * 10);
-		cudaMemcpy(dev_histogram2, &histogram, 10 * sizeof(int), cudaMemcpyHostToDevice);
+		cudaMemcpy(dev_histogram2, histogram, 10 * sizeof(int), cudaMemcpyHostToDevice);
 
-	//cudaHostAlloc((void**) &inputString, sizeof(char) * readBlockSize, cudaHostAllocDefault);
-	//cudaHostAlloc((void**) &histogram, sizeof(int) * 10, cudaHostAllocDefault);
+		//REMOVE AMPERSAND IN CUDAMEMCPY THEN IT WORKS
 
-	while(fgets(inputString, readBlockSize, input) != NULL) {
-		printf("\t%s\n", inputString);
+
+	while(fgets(inputString1, readBlockSize, input) != NULL) {
+		printf("\t%s\n", inputString1);
 		cudaSetDevice(0);
-		cudaMemcpy(dev_inputString1, &inputString, readBlockSize * sizeof(char), cudaMemcpyHostToDevice);
+		cudaMemcpy(dev_inputString1, inputString1, readBlockSize * sizeof(char), cudaMemcpyHostToDevice);
 		computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads>>>(dev_inputString1, dev_histogram1);
 		// cudaMemcpyAsync(dev_inputString, &inputString, readBlockSize * sizeof(char), cudaMemcpyHostToDevice, stream1);
 		// computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads, stream1>>>(dev_inputString, dev_histogram);
 
-		if (fgets(inputString, readBlockSize, input) != NULL) {
-			printf("\t%s\n", inputString);
+		if (fgets(inputString2, readBlockSize, input) != NULL) {
+			printf("\t%s\n", inputString2);
 			cudaSetDevice(1);
-			cudaMemcpy(dev_inputString2, &inputString, readBlockSize * sizeof(char), cudaMemcpyHostToDevice);
+			cudaMemcpy(dev_inputString2, inputString2, readBlockSize * sizeof(char), cudaMemcpyHostToDevice);
 			computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads>>>(dev_inputString2, dev_histogram2);
 			// cudaMemcpyAsync(dev_inputString, &inputString, readBlockSize * sizeof(char), cudaMemcpyHostToDevice, stream1);
 			// computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads, stream1>>>(dev_inputString, dev_histogram);
