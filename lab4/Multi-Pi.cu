@@ -54,7 +54,7 @@ int main(int argc, char *argv[]) {
 
 	char* inputString1; char* inputString2; 
 	int* histogram;
-	int histogram2[10] = {0}, count = 0, count2 = 1, firstDigit; 
+	int histogram2[10] = {0}, count = 1; 
 	char *dev_inputString1;
 	char *dev_inputString2; 
 	int *dev_histogram1;
@@ -81,10 +81,9 @@ int main(int argc, char *argv[]) {
 
 	int tmp[12] = {0};
 	fgets(inputString1, 12, input); //12
-	firstDigit = inputString1[0] - '0';
 	for (int i = 0; i < 11; i++) {
 		tmp[inputString1[i] - '0']++;
-		printf("%i ", inputString1[i] - '0');
+		//printf("%i ", inputString1[i] - '0');
 	}
 
 	// for (int i = 0; i < 5; i++) {
@@ -103,25 +102,20 @@ int main(int argc, char *argv[]) {
 
 	while(fgets(inputString1, readBlockSize, input) != NULL) {
 		cudaSetDevice(0);
-		// cudaMemcpy(dev_inputString1, inputString1, readBlockSize * sizeof(char), cudaMemcpyHostToDevice);
-		// computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads>>>(dev_inputString1, dev_histogram1);
 		cudaMemcpyAsync(dev_inputString1, inputString1, readBlockSize * sizeof(char), cudaMemcpyHostToDevice, stream1);
 		computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads, 0, stream1>>>(dev_inputString1, dev_histogram1);
-		printf("GPU-0 (%i)\n", count); count = count + readBlockSize;
-
+		
 		if (fgets(inputString2, readBlockSize, input) != NULL) {
 			cudaSetDevice(1);
-			// cudaMemcpy(dev_inputString2, inputString2, readBlockSize * sizeof(char), cudaMemcpyHostToDevice);
-			// computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads>>>(dev_inputString2, dev_histogram2);
 			cudaMemcpyAsync(dev_inputString2, inputString2, readBlockSize * sizeof(char), cudaMemcpyHostToDevice, stream2);
 			computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads, 0, stream2>>>(dev_inputString2, dev_histogram2);
-			printf("GPU-1 (%i)\n", count); count = count + readBlockSize;
 		}
-		// printf("GPUs Synchronized (%i)\n", count);
-		// count++;
 		
 		cudaDeviceSynchronize();
-
+		
+		printf("GPUs Synchronized (%i)\n", count);
+		count++;
+		
 	}
 
 
@@ -132,8 +126,9 @@ int main(int argc, char *argv[]) {
 	cudaMemcpy(histogram2, dev_histogram2, 10 * sizeof(int), cudaMemcpyDeviceToHost);
 
 	for (int i = 0; i < 10; i++) {
-		printf("[%i]: %i + %i + %i = %i\n", i, histogram[i], histogram2[i], tmp[i], histogram[i] + histogram2[i] + tmp[i]);
-		fprintf(output, "%i\t%i\t%i\n", histogram[i], histogram2[i], histogram[i] + histogram2[i] + tmp[i]);
+		int total = histogram[i] + histogram2[i] + tmp[i];
+		printf("[%i]: %i\tNormalized: %f\n", i, total, (double)total/(double)100000001);
+		fprintf(output, "%i\t%f\n", i, (double)total/(double)100000001);
 	}
 
 
@@ -143,6 +138,10 @@ int main(int argc, char *argv[]) {
 	end = clock();
 	exec_time = ((double) (end - start)) / CLOCKS_PER_SEC;
 	printf("\nExecution Time: %f\n", exec_time);
+
+	//I got your back, Dr. Cho, together we save the world
+	cudaStreamDestroy(stream1);
+	cudaStreamDestroy(stream2);
 
 	fclose(input);
 	fclose(output);
