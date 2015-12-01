@@ -5,10 +5,9 @@
 #include <curand.h>
 #include <curand_kernel.h>
 
-//#define Threads 768
-#define Threads 500
+#define Threads 1024
 
-#define readBlockSize 100000
+#define readBlockSize 5000000
 
 __global__ void computeHistogram(char*, int*);
 __global__ void blankCall() {int i = 0; if (i == 0) {} };
@@ -38,10 +37,10 @@ int main(int argc, char *argv[]) {
 
 	//------------------------------------------------------------------------------------//
 
-	// cudaStream_t stream1;
-	// cudaStreamCreate(&stream1);
-	// cudaStream_t stream2;
-	// cudaStreamCreate(&stream2); 
+	cudaStream_t stream1;
+	cudaStreamCreate(&stream1);
+	cudaStream_t stream2;
+	cudaStreamCreate(&stream2); 
 
 	clock_t start, end;
 	double exec_time;
@@ -77,32 +76,34 @@ int histogram2[10] = {0}, count = 1;
 		cudaMalloc((void**)&dev_histogram2, sizeof(int) * 10);
 		cudaMemcpy(dev_histogram2, histogram, 10 * sizeof(int), cudaMemcpyHostToDevice);
 
-		//REMOVE AMPERSAND IN CUDAMEMCPY THEN IT WORKS
-
-
 	while(fgets(inputString1, readBlockSize, input) != NULL) {
 		printf("\t%s\n", inputString1);
 		cudaSetDevice(0);
-		cudaMemcpy(dev_inputString1, inputString1, readBlockSize * sizeof(char), cudaMemcpyHostToDevice);
-		computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads>>>(dev_inputString1, dev_histogram1);
-		// cudaMemcpyAsync(dev_inputString, &inputString, readBlockSize * sizeof(char), cudaMemcpyHostToDevice, stream1);
-		// computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads, stream1>>>(dev_inputString, dev_histogram);
+		// cudaMemcpy(dev_inputString1, inputString1, readBlockSize * sizeof(char), cudaMemcpyHostToDevice);
+		// computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads>>>(dev_inputString1, dev_histogram1);
+		cudaMemcpyAsync(dev_inputString1, inputString1, readBlockSize * sizeof(char), cudaMemcpyHostToDevice, stream1);
+		computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads, 0, stream1>>>(dev_inputString1, dev_histogram1);
 
 		if (fgets(inputString2, readBlockSize, input) != NULL) {
 			printf("\t%s\n", inputString2);
 			cudaSetDevice(1);
-			cudaMemcpy(dev_inputString2, inputString2, readBlockSize * sizeof(char), cudaMemcpyHostToDevice);
-			computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads>>>(dev_inputString2, dev_histogram2);
-			// cudaMemcpyAsync(dev_inputString, &inputString, readBlockSize * sizeof(char), cudaMemcpyHostToDevice, stream1);
-			// computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads, stream1>>>(dev_inputString, dev_histogram);
+			// cudaMemcpy(dev_inputString2, inputString2, readBlockSize * sizeof(char), cudaMemcpyHostToDevice);
+			// computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads>>>(dev_inputString2, dev_histogram2);
+			cudaMemcpyAsync(dev_inputString2, inputString2, readBlockSize * sizeof(char), cudaMemcpyHostToDevice, stream2);
+			computeHistogram<<<(int)ceil(readBlockSize / Threads) + 1, Threads, 0, stream2>>>(dev_inputString2, dev_histogram2);
 		}
 
-		cudaDeviceSynchronize();
+		
 
 		printf("GPUs Synchronized (%i)\n", count);
 		count++;
 
 	}
+
+	cudaDeviceSynchronize();
+
+	// cudaStreamSynchronize(stream1);
+	// cudaStreamSynchronize(stream2);
 
 	cudaSetDevice(0);
 	cudaMemcpy(histogram, dev_histogram1, 10 * sizeof(int), cudaMemcpyDeviceToHost);
@@ -112,7 +113,6 @@ int histogram2[10] = {0}, count = 1;
 	for (int i = 0; i < 10; i++) {
 		printf("[%i]: %i\n", i, histogram[i] + histogram2[i]);
 	}
-
 
 
 	//===================================================
